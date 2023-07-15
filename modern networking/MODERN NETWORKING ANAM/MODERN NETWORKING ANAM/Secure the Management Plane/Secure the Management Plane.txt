@@ -1,0 +1,296 @@
+
+PRATICAL 4: Secure the Management Plane
+
+Step 1: Configure loopbacks and assign addresses.
+
+hostname R1
+interface Loopback 0
+description R1 LAN
+ip address 192.168.1.1 255.255.255.0
+exit
+interface Serial1/0
+description R1 --> R2
+ip address 10.1.1.1 255.255.255.252
+clock rate 128000
+no shutdown
+exit
+end
+
+
+R2
+hostname R2
+interface Serial1/0
+description R2 --> R1
+ip address 10.1.1.2 255.255.255.252
+no shutdown
+exit
+interface Serial1/1
+description R2 --> R3
+ip address 10.2.2.1 255.255.255.252
+clock rate 128000
+no shutdown
+exit
+end
+
+
+R3
+hostname R3
+interface Loopback0
+description R3 LAN
+ip address 192.168.3.1 255.255.255.0
+exit
+interface Serial1/1
+description R3 --> R2
+ip address 10.2.2.2 255.255.255.252
+no shutdown
+exit
+end
+
+Step 2: Configure static routes.
+
+a. On R1, configure a default static route to ISP.
+R1(config)# 
+ip route 0.0.0.0 0.0.0.0 10.1.1.2
+
+b. On R3, configure a default static route to ISP.
+R3(config)# 
+ip route 0.0.0.0 0.0.0.0 10.2.2.1
+
+c. On R2, configure two static routes.
+R2(config)# 
+ip route 192.168.1.0 255.255.255.0 10.1.1.1
+ip route 192.168.3.0 255.255.255.0 10.2.2.2
+
+d. From the R1 router, run the following Tcl script to verify connectivity.
+R1# tclsh
+foreach address { 192.168.1.1 10.1.1.1 10.1.1.2 10.2.2.1 10.2.2.2 192.168.3.1
+} { ping $address }
+
+Step 3: Secure management access.
+a. On R1, use the security passwords command to set a minimum password 
+length of 10 characters.
+
+R1(config)# 
+security passwords min-length 10
+b. Configure the enable secret encrypted password on both routers.
+
+R1(config)# 
+enable secret class12345
+
+c. Configure a console password and enable login for routers. For additional 
+security, the exec-timeout command causes the line to log out after 5 minutes of 
+inactivity. The logging synchronous command prevents console messages from 
+interrupting command entry.
+
+R1(config)# line console 0
+R1(config-line)# 
+password ciscoconpass
+exec-timeout 5 0
+login
+logging synchronous
+exit
+
+d. Configure the password on the vty lines for router R1.
+
+R1(config)# line vty 0 4
+R1(config-line)# 
+password ciscovtypass
+exec-timeout 5 0
+login
+exit
+
+e. The aux port is a legacy port used to manage a router remotely using a modem 
+and is hardly ever used. Therefore, disable the aux port.
+
+R1(config)# line aux 0
+R1(config-line)# 
+no exec
+end
+
+f. Use the service password-encryption command to encrypt the line console and 
+vty passwords.
+
+R1(config)# 
+service password-encryption
+R1(config)#
+
+g. Configure a warning to unauthorized users with a message-of-the-day (MOTD) 
+banner using the banner motd command. When a user connects to one of the 
+routers, the MOTD banner appears before the login prompt. In this example, the 
+dollar sign ($) is used to start and end the message.
+
+R1(config)# 
+banner motd $Unauthorized access strictly prohibited!$
+exit
+
+Step 4: Configure enhanced username password security.
+a. To create local database entry encrypted to level 4 (SHA256), use the username
+name secret password global configuration command. In global configuration 
+mode, enter the following command:
+
+R1(config)# 
+username JR-ADMIN secret class12345
+username ADMIN secret class54321
+
+b. Set the console line to use the locally defined login accounts.
+R1(config)# line console 0
+R1(config-line)# 
+login local
+exit
+
+c. Set the vty lines to use the locally defined login accounts.
+R1(config)# line vty 0 4
+R1(config-line)# 
+login local
+end
+
+d. Repeat the steps 4a to 4c on R3.
+
+e. To verify the configuration, telnet to R3 from R1 and login using the ADMIN 
+local database account.
+R1# 
+telnet 10.2.2.2
+Trying 10.2.2.2 ... Open
+Unauthorized access strictly prohibited!
+User Access Verification
+
+Username: ADMIN
+Password:
+R3>
+
+Note:- Password is class54321 and it will be invisible while writing. Just write the 
+password and press enter
+
+Step 5: Enabling AAA RADIUS Authentication with Local User for Backup.
+a. Always have local database accounts created before enabling AAA. Since we 
+created two local database accounts in the previous step, then we can proceed 
+and enable AAA on R1.
+
+R1(config)# aaa new-mode
+
+b. Configure the specifics for the first RADIUS server located at 192.168.1.101. 
+Use RADIUS-1-pa55w0rd as the server password.
+
+R1(config)# 
+radius server RADIUS-1
+R1(config-radius-server)# 
+address ipv4 192.168.1.101
+key RADIUS-1-pa55w0rd
+exit
+R1(config)#
+
+c. Configure the specifics for the second RADIUS server located at 192.168.1.102. 
+Use RADIUS-2-pa55w0rd as the server password.
+
+R1(config)# radius server RADIUS-2
+R1(config-radius-server)# 
+address ipv4 192.168.1.102
+key RADIUS-2-pa55w0rd
+exit
+R1(config)#
+
+d. Assign both RADIUS servers to a server group.
+
+R1(config)# aaa group server radius RADIUS-GROUP
+R1(config-sg-radius)# 
+server name RADIUS-1
+server name RADIUS-2
+exit
+R1(config)#
+
+e. Enable the default AAA authentication login to attempt to validate against the 
+server group. If they are not available, then authentication should be validated 
+against the local database..
+
+R1(config)# aaa authentication login default group RADIUS-GROUP local
+R1(config)#
+
+f. Enable the default AAA authentication Telnet login to attempt to validate 
+against the server group. If they are not available, then authentication should be 
+validated against a case sensitive local database.
+
+R1(config)# aaa authentication login TELNET-LOGIN group RADIUS-GROUP local-case
+R1(config)#
+
+g. Alter the VTY lines to use the TELNET-LOGIN AAA authentiaito0n method.
+
+R1(config)# line vty 0 4
+R1(config-line)# 
+login authentication TELNET-LOGIN
+exit
+
+h. Repeat the steps 5a to 5g on R3
+
+i. To verify the configuration, telnet to R3 from R1 and login using the ADMIN 
+local database account.
+
+R1# telnet 10.2.2.2
+Trying 10.2.2.2 ... Open
+Unauthorized access strictly prohibited!
+User Access Verification
+
+Username: ADMIN
+Password:
+R3>
+
+
+Step 6: Enabling secure remote management using SSH.
+a. SSH requires that a device name and a domain name be configured. Since the 
+router already has a name assigned, configure the domain name.
+
+R1(config)# 
+ip domain-name ccnasecurity.com
+
+b. The router uses the RSA key pair for authentication and encryption of 
+transmitted SSH data. Although optional it may be wise to erase any existing 
+key pairs on the router.
+
+R1(config)# 
+crypto key zeroize rsa
+
+c. Generate the RSA encryption key pair for the router. Configure the RSA keys 
+with 1024 for the number of modulus bits. The default is 512, and the range is 
+from 360 to 2048.
+
+R1(config)# 
+crypto key generate rsa general-keys modulus 1024
+
+d. Configure SSH version 2 on R1.
+
+R1(config)# ip ssh version 2
+
+e. Configure the vty lines to use only SSH connections.
+
+R1(config)# line vty 0 4
+R1(config-line)# 
+transport input ssh
+end
+
+
+f. Verify the SSH configuration using the show ip ssh command.
+
+R1# show ip ssh
+
+
+g. Repeat the steps 6a to 6f on R3.
+
+
+h. Although a user can SSH from a host using the SSH option of TeraTerm of 
+PuTTY, a router can also SSH to another SSH enabled device. SSH to R3 from 
+R1.
+
+R1# ssh -l ADMIN 10.2.2.2
+Password:
+
+Note:- Password is class54321 and it will be invisible while writing. Just write the 
+password and press enter.
+
+Unauthorized access strictly prohibited!
+R3>
+R3> en
+Password:
+Note:- Password is class12345 and it will be invisible while writing. Just write the 
+
+password and press enter.
+R3#
+For device configuration use command show run on every router

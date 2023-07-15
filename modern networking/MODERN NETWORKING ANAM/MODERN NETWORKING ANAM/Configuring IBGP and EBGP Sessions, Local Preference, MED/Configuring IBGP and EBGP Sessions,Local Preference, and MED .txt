@@ -1,0 +1,495 @@
+﻿                                  PRATICAL 3:
+Configuring IBGP and EBGP Sessions, Local Preference, 
+and MED
+
+Step 0: Suggested starting configurations.
+a. Apply the following configuration to each router along with the appropriate 
+hostname. The exec-timeout 0 0 command should only be used in a lab 
+environment.
+no ip domain-lookup
+line con 0
+logging synchronous
+exec-timeout 0 0
+
+Router R1 (hostname ISP):
+interface Loopback0
+ip address 192.168.100.1 255.255.255.0
+exit
+interface Serial1/0
+ip address 192.168.1.5 255.255.255.252
+clock rate 128000
+no shutdown
+exit
+interface Serial1/1
+ip address 192.168.1.1 255.255.255.252
+no shutdown
+end
+
+
+Router R2 (hostname SanJose1):
+
+interface Loopback0
+ip address 172.16.64.1 255.255.255.0
+exit
+interface Serial1/0
+ip address 192.168.1.6 255.255.255.252
+no shutdown
+exit
+interface Serial1/1
+ip address 172.16.1.1 255.255.255.0
+clock rate 128000
+no shutdown
+end
+
+
+Router R3 (hostname SanJose2):
+interface Loopback0
+ip address 172.16.32.1 255.255.255.0
+exit
+interface Serial1/0
+ip address 192.168.1.2 255.255.255.252
+clock rate 128000
+no shutdown
+exit
+interface Serial1/1
+ip address 172.16.1.2 255.255.255.0
+no shutdown
+end
+
+b. Use ping to test the connectivity between the directly connected routers. Both 
+SanJose routers should be able to ping each other and their local ISP serial link IP 
+address. The ISP router cannot reach the segment between SanJose1 and 
+SanJose2.
+Step 2: Configure EIGRP.
+Configure EIGRP between the SanJose1 and SanJose2 routers. 
+SanJose1#conf t
+router eigrp 1
+network 172.16.0.0
+SanJose2#conf t
+router eigrp 1
+network 172.16.0.0
+
+Step 3: Configure IBGP and verify BGP neighbors.
+a. Configure IBGP between the SanJose1 and SanJose2 routers. On the SanJose1 
+router, enter the following configuration.
+SonJose1(config-router):exit
+SonJose1(config):
+router bgp 64512
+neighbor 172.16.32.1 remote-as 64512
+neighbor 172.16.32.1 update-source loopback 0
+b. Complete the IBGP configuration on SanJose2 using the following commands.
+SonJose2(config-router):exit
+SonJose2(config):
+router bgp 64512
+neighbor 172.16.64.1 remote-as 64512
+neighbor 172.16.64.1 update-source loopback 0
+c. Verify that SanJose1 and SanJose2 become BGP neighbors by issuing the show 
+ip bgp neighbors command on SanJose1. View the following partial output. If the 
+BGP state is not established, troubleshoot the connection.
+SonJose2(config-router):exit
+SonJose2(config):end
+SanJose2#
+show ip bgp neighbors
+
+Step 4: Configure EBGP and verify BGP neighbors.
+a. Configure ISP to run EBGP with SanJose1 and SanJose2. Enter the following 
+commands on ISP.
+ISP#conf t
+router bgp 200
+neighbor 192.168.1.6 remote-as 64512
+neighbor 192.168.1.2 remote-as 64512
+network 192.168.100.0
+
+b. Configure a discard static route for the 172.16.0.0/16 network. Any packets that 
+do not have a more specific match(longer match) for a 172.16.0.0 subnet will be 
+dropped instead of sent to the ISP. Later in this lab we will configure a default 
+route to the ISP.
+SanJose1(config-router)#exit
+SanJose1(config)#
+ip route 172.16.0.0 255.255.0.0 null0
+
+c. Configure SanJose1 as an EBGP peer to ISP.
+SanJose1(config)# 
+router bgp 64512
+neighbor 192.168.1.5 remote-as 200
+network 172.16.0.0
+
+d. Use the show ip bgp neighbors command to verify that SanJose1 and ISP have 
+reached the established state. Troubleshoot if necessary.
+SanJose1(config-router)#end
+SanJose1# 
+show ip bgp neighbors
+
+
+e. Configure a discard static route for 172.16.0.0/16 on SanJose2 and as an EBGP 
+peer to ISP.
+SanJose2# conf t
+ip route 172.16.0.0 255.255.0.0 null0
+router bgp 64512
+neighbor 192.168.1.1 remote-as 200
+network 172.16.0.0
+
+Step 5: View BGP summary output.
+In Step 4, the show ip bgp neighbors command was used to verify that SanJose1 and 
+ISP had reached the established state. 
+A useful alternative command is show ip bgp summary. The output should be similar to 
+the following.
+SanJose2(config-router)#end
+SanJose2#
+show ip bgp summary
+
+Step 6: Verify which path the traffic takes.
+a. Clear the IP BGP conversation with the clear ip bgp * command on ISP. Wait 
+for the conversations to reestablish
+with each SanJose router.
+ISP(config-router)#end
+ISP# 
+clear ip bgp *
+ping 172.16.64.1
+ping 172.16.1.1
+ping 172.16.32.1
+ping 172.16.1.2
+show ip bgp
+ping 172.16.1.1 source 192.168.100.1
+ping 172.16.32.1 source 192.168.100.1
+ping 172.16.1.2 source 192.168.100.1
+ping 172.16.64.1 source 192.168.100.1
+ISP#
+ping
+Protocol [ip]:
+Target IP address: 172.16.64.1
+Repeat count [5]:
+Datagram size [100]:
+Timeout in seconds [2]:
+Extended commands [n]: y
+Source address or interface: 192.168.100.1
+Type of service [0]:
+Set DF bit in IP header? [no]:
+Validate reply data? [no]:
+Data pattern [0xABCD]:
+Loose, Strict, Record, Timestamp, Verbose[none]:
+Sweep range of sizes [n]:
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 172.16.64.1, timeout is 2 seconds:
+Packet sent with a source address of 192.168.100.1
+!!!!!
+Success rate is 100 percent (5/5), round-trip min/avg/max = 20/20/24 ms
+
+
+Step 7: Configure the BGP next-hop-self feature.
+a. Issue the following commands on the ISP router.
+ISP#conf t
+ISP(config)#
+router bgp 200
+network 192.168.1.0 mask 255.255.255.252
+network 192.168.1.4 mask 255.255.255.252
+ISP(config-router)#end
+ISP#
+show ip bgp
+
+c. Verify on SanJose1 and SanJose2 that the opposite WAN link is included in the routing 
+table. 
+SanJose2# 
+show ip route
+
+d. To better understand the next-hop-self command we will remove ISP advertising its 
+two WAN links and shutdown the WAN link between ISP and SanJose2. The only possible 
+path from SanJose2 to ISP’s 192.168.100.0/24 is through SanJose1.
+ISP#conf t
+ISP(config)# 
+router bgp 200
+no network 192.168.1.0 mask 255.255.255.252
+no network 192.168.1.4 mask 255.255.255.252
+exit
+interface serial 1/1
+shutdown
+
+e. Display SanJose2’s BGP table using the show ip bgp command and the IPv4 
+routing table with show ip route.
+SanJose2# 
+show ip bgp
+
+f. Issue the next-hop-self command on SanJose1 and SanJose2 to advertise 
+themselves as the next hop to their IBGP peer.
+SanJose1#conf t
+SanJose1(config)# 
+router bgp 64512
+neighbor 172.16.32.1 next-hop-self
+SanJose2#conf t
+SanJose2(config)# 
+router bgp 64512
+neighbor 172.16.64.1 next-hop-self
+
+g. Reset BGP operation on either router with the clear ip bgp * command.
+SanJose1# 
+clear ip bgp *
+SanJose2# 
+clear ip bgp *
+
+h. After the routers have returned to established BGP speakers, issue the show ip 
+bgp command on SanJose2 and notice that the next hop is now SanJose1 instead 
+of ISP.
+SanJose2# 
+show ip bgp
+SanJose2# 
+show ip route
+
+j. Before configuring the next BGP attribute, restore the WAN link between ISP 
+and SanJose3. This will change the BGP table and routing table on both routers. 
+For example, SanJose2’sexit
+
+ routing table shows 192.168.100.0/24 will now have a 
+better path through ISP.
+ISP(config)# 
+interface serial 1/1
+no shutdown
+SanJose2# 
+show ip route
+
+B 192.168.100.0/24 [20/0] via 192.168.1.1, 00:01:35
+Step 8: Set BGP local preference.
+a. Because the local preference value is shared between IBGP neighbors, configure 
+a simple route map that references the local preference value on SanJose1 and 
+SanJose2. This policy adjusts outbound traffic to prefer the link off the SanJose1 
+router instead of the metered T1 off SanJose2.
+SanJose1(config)# 
+route-map PRIMARY_T1_IN permit 10
+set local-preference 150
+exit
+router bgp 64512
+neighbor 192.168.1.5 route-map PRIMARY_T1_IN in
+SanJose2(config)#
+route-map SECONDARY_T1_IN permit 10
+set local-preference 125
+SanJose1(config-route-map)# 
+exit
+SanJose2(config)# 
+router bgp 64512
+neighbor 192.168.1.1 route-map SECONDARY_T1_IN in
+
+b. Use the clear ip bgp * soft command after configuring this new policy. When the 
+conversations have been reestablished, issue the show ip bgp command on 
+SanJose1 and SanJose2.
+SanJose1# 
+clear ip bgp * soft
+SanJose2# 
+clear ip bgp * soft
+SanJose1# 
+show ip bgp
+SanJose2# 
+show ip bgp
+
+Step 9: Set BGP MED.
+a. Examine what the return path ISP takes to reach AS 64512. Notice that the 
+return path is different from the original path. 
+ISP# 
+show ip bgp
+show ip route
+
+b. Use an extended ping command to verify this situation. Specify the record option 
+and compare your output to thenfollowing. Notice the return path using the exit 
+interface 192.168.1.1 to SanJose2.
+SanJose2# 
+ping
+Protocol [ip]:
+Target IP address: 192.168.100.1
+Repeat count [5]:
+Datagram size [100]:
+Timeout in seconds [2]:
+Extended commands [n]: y
+Source address or interface: 172.16.32.1
+Type of service [0]:
+Set DF bit in IP header? [no]:
+Validate reply data? [no]:
+Data pattern [0xABCD]:
+Loose, Strict, Record, Timestamp, Verbose[none]: record
+Number of hops [ 9 ]:
+Loose, Strict, Record, Timestamp, Verbose[RV]:
+Sweep range of sizes [n]:
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 192.168.100.1, timeout is 2 seconds:
+Packet sent with a source address of 172.16.32.1
+Packet has IP options: Total option bytes= 39, padded length=40
+Reply to request 4 (20 ms). Received packet has options
+Total option bytes= 40, padded length=40
+Record route:
+(172.16.1.2)
+(192.168.1.6)
+(192.168.100.1)
+(192.168.1.1)
+(172.16.32.1) &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+End of list
+Success rate is 100 percent (5/5), round-trip min/avg/max = 20/20/24 ms
+SanJose2#
+
+
+c. Create a new policy to force the ISP router to return all traffic via SanJose1. Create a 
+second route map utilizing the MED (metric) that is shared between EBGP neighbors.
+SanJose1(config)#
+route-map PRIMARY_T1_MED_OUT permit 10
+set Metric 50
+exit
+router bgp 64512
+neighbor 192.168.1.5 route-map PRIMARY_T1_MED_OUT out
+SanJose2(config)#
+route-map SECONDARY_T1_MED_OUT permit 10
+set Metric 75
+exit
+router bgp 64512
+neighbor 192.168.1.1 route-map SECONDARY_T1_MED_OUT out
+
+d. Use the clear ip bgp * soft command after issuing this new policy. Issuing the show ip 
+bgp command as follows onSanJose1 or SanJose2 does not indicate anything about this 
+newly defined policy.
+SanJose1# 
+clear ip bgp * soft
+SanJose2# 
+clear ip bgp * soft
+SanJose1# 
+show ip bgp
+SanJose2# 
+show ip bgp
+
+
+e. Reissue an extended ping command with the record command. Notice the change in 
+return path using the exit interface 192.168.1.5 to SanJose1.
+SanJose2# 
+ping
+Protocol [ip]:
+Target IP address: 192.168.100.1
+Repeat count [5]:
+Datagram size [100]:
+Timeout in seconds [2]:
+Extended commands [n]: y
+Source address or interface: 172.16.32.1
+Type of service [0]:
+Set DF bit in IP header? [no]:
+Validate reply data? [no]:
+Data pattern [0xABCD]:
+Loose, Strict, Record, Timestamp, Verbose[none]: record
+Number of hops [ 9 ]:
+Loose, Strict, Record, Timestamp, Verbose[RV]:
+Sweep range of sizes [n]:
+Type escape sequence to abort.
+Sending 5, 100-byte ICMP Echos to 192.168.100.1, timeout is 2 seconds:
+Packet sent with a source address of 172.16.32.1
+Packet has IP options: Total option bytes= 39, padded length=40
+Record route: &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0) (0.0.0.0)
+(0.0.0.0)
+Reply to request 0 (28 ms). Received packet has options
+Total option bytes= 40, padded length=40
+Record route:
+(172.16.1.2)
+(192.168.1.6)
+(192.168.100.1)
+(192.168.1.5)
+(172.16.1.1)
+(172.16.32.1) &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+End of list
+Reply to request 1 (28 ms). Received packet has options
+Total option bytes= 40, padded length=40
+Record route:
+(172.16.1.2)
+(192.168.1.6)
+(192.168.100.1)
+(192.168.1.5)
+(172.16.1.1)
+(172.16.32.1) &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+End of list
+Reply to request 2 (28 ms). Received packet has options
+Total option bytes= 40, padded length=40
+Record route:
+(172.16.1.2)
+(192.168.1.6)
+(192.168.100.1)
+(192.168.1.5)
+(172.16.1.1)
+(172.16.32.1) &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+End of list
+Reply to request 3 (28 ms). Received packet has options
+Total option bytes= 40, padded length=40
+Record route:
+(172.16.1.2)
+(192.168.1.6)
+(192.168.100.1)
+(192.168.1.5)
+(172.16.1.1)
+(172.16.32.1) &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+End of list
+Reply to request 4 (28 ms). Received packet has options
+Total option bytes= 40, padded length=40
+Record route:
+(172.16.1.2)
+(192.168.1.6)
+(192.168.100.1)
+(192.168.1.5)
+(172.16.1.1)
+(172.16.32.1) &lt;*&gt;
+(0.0.0.0)
+(0.0.0.0)
+(0.0.0.0)
+End of list
+Success rate is 100 percent (5/5), round-trip min/avg/max = 28/28/28 ms
+
+ISP# 
+show ip bgp
+
+Step 10: Establish a default route.
+a. Configure ISP to inject a default route to both SanJose1 and SanJose2 using BGP using 
+the default-originate command. This command does not require the presence of 0.0.0.0 in 
+the ISP router. Configure the 10.0.0.0/8 network which will not be advertised using BGP. 
+This network will be used to test the default route on SanJose1 and SanJose2.
+ISP(config)# 
+router bgp 200
+neighbor 192.168.1.6 default-originate
+neighbor 192.168.1.2 default-originate
+exit
+interface loopback 10
+ip address 10.0.0.1 255.255.255.0
+
+
+c. The preferred default route is by way of SanJose1 because of the higher local 
+preference attribute configured on SanJose1 earlier.
+SanJose2# 
+show ip bgp
+d. Using the traceroute command verify that packets to 10.0.0.1 is using the default route 
+through SanJose1.
+SanJose2# 
+traceroute 10.0.0.1
+
+e. Next, test how BGP adapts to using a different default route when the path between 
+SanJose1 and ISP goes down.
+ISP(config)# 
+interface serial 1/0
+shutdown
+
+f. Verify that both routers have received the default route by examining the routing tables 
+on SanJose1 and SanJose2. Notice that both routers prefer the route between SanJose1 
+and ISP.
+SanJose1# 
+show ip route
+SanJose2# 
+show ip route
+
+g. Verify the new path using the traceroute command to 10.0.0.1 from SanJose1. Notice 
+the default route is now through SanJose2.
+SanJose1# 
+trace 10.0.0.1

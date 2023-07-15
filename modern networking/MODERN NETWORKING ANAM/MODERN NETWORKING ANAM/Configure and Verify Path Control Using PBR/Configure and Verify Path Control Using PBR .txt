@@ -1,0 +1,270 @@
+                                     PRATICAL 5: 
+Configure and Verify Path Control Using PBR
+
+Router R1
+hostname R1
+
+interface Lo1
+description R1 LAN
+ip address 192.168.1.1 255.255.255.0
+interface Serial1/0
+description R1 --> R2
+ip address 172.16.12.1 255.255.255.248
+clock rate 128000
+bandwidth 128
+no shutdown
+interface Serial1/1
+description R1 --> R3
+ip address 172.16.13.1 255.255.255.248
+bandwidth 64
+no shutdown
+end
+
+Router R2
+hostname R2
+
+interface Lo2
+description R2 LAN
+ip address 192.168.2.1 255.255.255.0
+interface Serial1/0
+description R2 --> R1
+ip address 172.16.12.2 255.255.255.248
+bandwidth 128
+no shutdown
+interface Serial1/1
+description R2 --> R3
+ip address 172.16.23.2 255.255.255.248
+clock rate 128000
+bandwidth 128
+no shutdown
+end
+
+Router R3
+hostname R3
+
+interface Lo3
+description R3 LAN
+ip address 192.168.3.1 255.255.255.0
+interface Serial1/0
+description R3 --> R1
+ip address 172.16.13.3 255.255.255.248
+clock rate 64000
+bandwidth 64
+no shutdown
+interface Serial1/1
+description R3 --> R2
+ip address 172.16.23.3 255.255.255.248
+bandwidth 128
+no shutdown
+interface Serial1/2
+description R3 --> R4
+ip address 172.16.34.3 255.255.255.248
+clock rate 64000
+bandwidth 64
+no shutdown
+end
+
+
+Router R4
+hostname R4
+
+interface Lo4
+description R4 LAN A
+ip address 192.168.4.1 255.255.255.128
+interface Lo5
+description R4 LAN B
+ip address 192.168.4.129 255.255.255.128
+interface Serial1/0
+description R4 --> R3
+ip address 172.16.34.4 255.255.255.248
+bandwidth 64
+no shutdown
+end
+
+
+c. Verify the configuration with the show ip interface brief, show protocols, and 
+show interfaces description commands. The output from router R3 is shown here 
+as an example.
+
+R3# 
+show ip interface brief | include up
+R3# 
+show protocols
+R3# 
+show interfaces description | include up
+
+Step 3: Configure basic EIGRP.
+a. Implement EIGRP AS 1 over the serial and loopback interfaces as you have 
+configured it for the other EIGRP labs.
+
+b. Advertise networks 172.16.12.0/29, 172.16.13.0/29, 172.16.23.0/29, 
+172.16.34.0/29, 192.168.1.0/24, 192.168.2.0/24, 192.168.3.0/24, and 
+192.168.4.0/24 from their respective routers.
+Router R1
+R1#conf t
+
+router eigrp 1
+network 192.168.1.0
+network 172.16.12.0 0.0.0.7
+network 172.16.13.0 0.0.0.7
+no auto-summary
+
+Router R2
+R2#conf t
+
+router eigrp 1
+network 192.168.2.0
+network 172.16.12.0 0.0.0.7
+network 172.16.23.0 0.0.0.7
+no auto-summary
+
+Router R3
+R3#conf t
+
+router eigrp 1
+network 192.168.3.0
+network 172.16.13.0 0.0.0.7
+network 172.16.23.0 0.0.0.7
+network 172.16.34.0 0.0.0.7
+no auto-summary
+
+Router R4
+R4#conf t
+
+router eigrp 1
+network 192.168.4.0
+network 172.16.34.0 0.0.0.7
+no auto-summary
+
+Step 4: Verify EIGRP connectivity.
+a. Verify the configuration by using the show ip eigrp neighbors command to 
+check which routers have EIGRP adjacencies.
+
+R1# 
+show ip eigrp neighbors
+
+R2# 
+show ip eigrp neighbors
+
+R3# 
+show ip eigrp neighbors
+
+R4# 
+show ip eigrp neighbors
+
+b. Run the following Tcl script on all routers to verify full connectivity.
+R1# 
+tclsh
+foreach address {172.16.12.1 172.16.12.2 172.16.13.1 172.16.13.3 172.16.23.2
+172.16.23.3 172.16.34.3 172.16.34.4 192.168.1.1 192.168.2.1 192.168.3.1
+192.168.4.1 192.168.4.129 } { ping $address }
+
+Step 5: Verify the current path.
+Before you configure PBR, verify the routing table on R1.
+a. On R1, use the show ip route command. Notice the next-hop IP address for all 
+networks discovered by EIGRP.
+
+
+R1# 
+show ip route | begin Gateway
+
+
+b. On R4, use the traceroute command to the R1 LAN address and source the 
+ICMP packet from R4 LAN A and LAN B.
+
+R4# 
+traceroute 192.168.1.1 source 192.168.4.1
+traceroute 192.168.1.1 source 192.168.4.129
+
+
+c. On R3, use the show ip route command and note that the preferred route from 
+R3 to R1 LAN 192.168.1.0/24 is via R2 using the R3 exit interface S0/0/1.
+
+R3# 
+show ip route | begin Gateway
+
+
+d. On R3, use the show interfaces serial 0/0/0 and show interfaces s0/0/1 
+commands.
+
+R3# 
+show interfaces serial1/0
+show interfaces serial1/0 | include BW
+show interfaces serial1/1 | include BW
+
+
+e. Confirm that R3 has a valid route to reach R1 from its serial 0/0/0 interface 
+using the show ip eigrp topology 192.168.1.0 command.
+
+R3# 
+show ip eigrp topology 192.168.1.0
+
+Step 6: Configure PBR to provide path control.
+
+a. On router R3, create a standard access list called PBR-ACL to identify the R4 
+LAN B network.
+
+R3(config)# 
+ip access-list standard PBR-ACL
+R3(config-std-nacl)# 
+remark ACL matches R4 LAN B traffic
+permit 192.168.4.128 0.0.0.127
+exit
+
+b. Create a route map called R3-to-R1 that matches PBR-ACL and sets the nexthop interface to the R1 serial 0/0/1 interface.
+
+R3(config)# 
+route-map R3-to-R1 permit
+R3(config-route-map)# 
+description RM to forward LAN B traffic to R1
+match ip address PBR-ACL
+set ip next-hop 172.16.13.1
+exit
+
+c. Apply the R3-to-R1 route map to the serial interface on R3 that receives the 
+traffic from R4. Use the ip policy route-map command on interface S0/1/0.
+
+R3(config)# 
+interface s1/2
+R3(config-if)# 
+ip policy route-map R3-to-R1
+end
+
+d. On R3, display the policy and matches using the show route-map command.
+
+R3# 
+show route-map
+
+
+Step 7: Test the policy.
+
+a. On R3, create a standard ACL which identifies all of the R4 LANs.
+
+R3# conf t
+Enter configuration commands, one per line. End with CNTL/Z.
+R3(config)# 
+access-list 1 permit 192.168.4.0 0.0.0.255
+exit
+
+b. Enable PBR debugging only for traffic that matches the R4 LANs.
+
+R3# 
+debug ip policy ?
+debug ip policy 1
+
+c. Test the policy from R4 with the traceroute command, using R4 LAN A as the 
+source network.
+
+R4# 
+traceroute 192.168.1.1 source 192.168.4.1
+
+d. Test the policy from R4 with the traceroute command, using R4 LAN B as the 
+source network.
+
+R4# 
+traceroute 192.168.1.1 source 192.168.4.129
+
+e. On R3, display the policy and matches using the show route-map command.
+
+R3# 
+show route-map

@@ -1,0 +1,268 @@
+                                      PRACTICAL 1: 
+Configure IP SLA Tracking and Path Control Topology
+
+Step 1: Prepare the routers and configure the router hostname and interface 
+addresses.
+Router(R1)
+en
+conf t
+hostname R1
+
+interface Loopback 0
+ip address 192.168.1.1 255.255.255.0
+interface Serial1/0
+ip address 209.165.201.2 255.255.255.252
+clock rate 128000
+bandwidth 128
+no shutdown
+interface Serial1/1
+description R1 --> ISP2
+ip address 209.165.202.130 255.255.255.252
+bandwidth 128
+no shutdown
+
+
+Router ISP1 (R2)
+en
+conf t
+hostname ISP1
+
+interface Loopback0
+ip address 209.165.200.254 255.255.255.255
+interface Loopback1
+description ISP1 DNS Server
+ip address 209.165.201.30 255.255.255.255
+interface Serial01/0
+description ISP1 --> R1
+ip address 209.165.201.1 255.255.255.252
+bandwidth 128
+no shutdown
+interface Serial1/1
+description ISP1 --> ISP2
+ip address 209.165.200.225 255.255.255.252
+clock rate 128000
+bandwidth 128
+no shutdown
+
+
+Router ISP2 (R3)
+en
+conf t
+hostname ISP2
+
+interface Loopback0
+description Simulated Internet Web Server
+ip address 209.165.200.254 255.255.255.255
+interface Loopback1
+ip address 209.165.202.158 255.255.255.255
+interface Serial1/0
+description ISP2 --> R1
+ip address 209.165.202.129 255.255.255.252
+clock rate 128000
+bandwidth 128
+no shutdown
+interface Serial1/1
+description ISP2 --> ISP1
+ip address 209.165.200.226 255.255.255.252
+bandwidth 128
+no shutdown
+
+b. Verify the configuration by using the show interfaces description command. The 
+output from router R1 is shown here as an example.
+R1# 
+show interfaces description
+
+
+Router R1
+
+ip route 0.0.0.0 0.0.0.0 209.165.201.1
+
+Router ISP1 (R2)
+
+router eigrp 1
+network 209.165.200.224 0.0.0.3
+network 209.165.201.0 0.0.0.31
+no auto-summary
+ip route 192.168.1.0 255.255.255.0 209.165.201.2
+
+Router ISP2 (R3)
+router eigrp 1
+network 209.165.200.224 0.0.0.3
+network 209.165.202.128 0.0.0.3
+no auto-summary
+exit
+ip route 192.168.1.0 255.255.255.0 209.165.202.130
+
+
+Step 2: Verify server reachability.
+R1# 
+tclsh
+foreach address { 209.165.200.254 209.165.201.30 209.165.202.158} {ping $address 
+source 192.168.1.1 }
+
+foreach address { 209.165.200.254 209.165.201.30 209.165.202.158} { trace $address 
+source 192.168.1.1 }
+
+
+Step 3: Configure IP SLA probes.
+a. Create an ICMP echo probe on R1 to the primary DNS server on ISP1 using the 
+ip sla command.
+
+-----------------------------------------------------
+1 you can choose 2nd
+R1(config)#
+contol+z
+config
+ip sla 1
+*it show error
+ip sla monitor ?
+ip sla monitor 1
+icmp-echo 209.165.201.30
+*it show error
+type echo protocol ip ipicmpecho 209.165.201.30
+frequency 10
+exit
+#ip sla monitor configuration 1
+*all info.
+
+2
+OR
+
+ip sla 11
+icmp-echo 209.165.201.30
+frequency 10
+exit
+ip sla schedule 11 life forever start-time now
+
+b. Verify the IP SLAs configuration of operation 11 using the show ip sla 
+configuration 11 command.
+
+R1(tcl)# show ip sla configuration 11
+
+c. Issue the show ip sla statistics command to display the number of successes, 
+failures, and results of the latest operations.
+
+R1# 
+show ip sla monitor statistics
+*show ip sla statistics
+
+
+d. Although not actually required because IP SLA session 11 alone could provide 
+the desired fault tolerance, create a second probe, 22, to test connectivity to the 
+second DNS server located on router ISP2. You can copy and paste the following 
+commands on R1.
+
+R1#conf t
+ip sla 22
+icmp-echo 209.165.202.158
+frequency 10
+exit
+ip sla schedule 22 life forever start-time now
+
+
+e. Verify the new probe using the show ip sla configuration and show ip sla statistics 
+commands.
+
+R1# 
+show ip sla configuration 22
+show ip sla statistics 22
+
+
+Step 4: Configure tracking options.
+a. Remove the current default route on R1, and replace it with a floating static 
+route having an administrative
+distance of 5.
+
+R1(config)# 
+no ip route 0.0.0.0 0.0.0.0 209.165.201.1
+ip route 0.0.0.0 0.0.0.0 209.165.201.1 5
+exit
+
+b. Verify the routing table
+
+R1# 
+show ip route
+
+c. Use the track 1 ip sla 11 reachability command to enter the config-track 
+subconfiguration mode.
+R1(config)# 
+track 1 ip sla 11 reachability
+
+d. Specify the level of sensitivity to changes of tracked objects to 10 seconds of down 
+delay and 1 second of up delay using the delay down 10 up 1 command. 
+R1(config-track)# 
+delay down 10 up 1
+exit
+
+
+e. Configure the floating static route that will be implemented when tracking object 
+1 is active. To viewrouting table changes as they happen, first enable the debug ip 
+routing command. 
+
+R1# 
+debug ip routing
+conf t
+R1(config)# ip route 0.0.0.0 0.0.0.0 209.165.201.1 2 track 1
+
+
+f. Repeat the steps for operation 22, track number 2, and assign the static route an 
+admin distance higher than track 1 and lower than 5. On R1, copy the following 
+configuration, which sets an admin distance of 3.
+
+
+track 2 ip sla 22 reachability
+delay down 10 up 1
+exit
+ip route 0.0.0.0 0.0.0.0 209.165.202.129 3 track 2
+
+g. Verify the routing table again.
+R1# 
+show ip route
+
+Step 5: Verify IP SLA operation.
+
+ISP1(config)# 
+interface loopback 1
+shutdown
+
+b. Verify the routing table.
+R1# 
+show ip route
+
+c. Verify the IP SLA statistics.
+R1# 
+show ip sla statistics
+
+d. Initiate a trace to the web server from the internal LAN IP address.
+R1# 
+trace 209.165.200.254 source 192.168.1.1
+
+e. To examine the routing behavior when connectivity to the ISP1 DNS is restored, 
+re-enable the DNSaddress on ISP1 (R2) by issuing the no shutdown command on 
+the loopback 1 interface on ISP2.
+
+ISP1(config-if)# 
+no shutdown
+
+f. Again examine the IP SLA statistics.
+
+R1# 
+show ip sla statistics
+
+g. Verify the routing table.
+
+R1# 
+show ip route
+
+
+
+
+
+
+
+
+
+
+
+
+
